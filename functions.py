@@ -1,36 +1,21 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
-from typing import List, Union
 
 
 # ----------------------------
-# AST nodes
+# Normalization
 # ----------------------------
 
-@dataclass
-class Source:
-    value: float
-    unit: str = "V"
-
-@dataclass
-class Resistor:
-    value: float
-    unit: str = "ohm"
-
-@dataclass
-class Series:
-    children: list
-
-@dataclass
-class Parallel:
-    children: list
-
-
-Node = Union[Source, Resistor, Series, Parallel]
+def normalize_expr(expr: str) -> str:
+    """
+    Convert everything to lowercase except 'M',
+    so Mega prefix is preserved.
+    """
+    return "".join(ch if ch == "M" else ch.lower() for ch in expr)
 
 
 # ----------------------------
-# Tokenizer
+# Prefixes
 # ----------------------------
 
 PREFIXES = {
@@ -43,182 +28,237 @@ PREFIXES = {
     "p": 1e-12,
 }
 
-COMPONENT_RE = re.compile(r"\d+(?:\.\d+)?[kMmunp]?[ve]")
 
-def normalize_expr(expr: str) -> str:
-    return "".join(ch if ch == "M" else ch.lower() for ch in expr)
+# ----------------------------
+# AST nodes
+# ----------------------------
 
-def parse_component(token: str) -> Node:
-    m = re.fullmatch(r"(\d+(?:\.\d+)?)([kMmunp]?)([ve])", token)
+@dataclass
+class Component:
+    kind: str
+    value: float
+    unit: str
+    nodes: list = field(default_factory=list)
+
+
+@dataclass
+class ParallelGroup:
+    components: list
+    nodes: list
+
+
+@dataclass
+class Circuit:
+    elements: list
+
+
+# ----------------------------
+# Validation helpers
+# ----------------------------
+
+NODE_RE = re.compile(r"n[a-z0-9_]*$")
+
+UNIT_MAP = {
+    "v": "V",
+    "e": "ohm",
+    "f": "F",
+    "h": "H",
+}
+
+
+# Reads something like:
+# 10v[n0,n1]
+# 5ke[n1,n2]
+# 2.2Me[n2,n3]
+COMPONENT_CORE_RE = re.compile(r"\s*(\d+(?:\.\d+)?)([kMmunp]?)([a-z])")
+
+
+def skip_spaces(expr: str, pos: int) -> int:
+    while pos < len(expr) and expr[pos].isspace():
+        pos += 1
+    return pos
+
+
+def parse_nodes(expr: str, pos: int):
+    """
+    Parse a node list like: [n0,n1]
+    Returns (nodes_list, new_pos)
+    """
+    pos = skip_spaces(expr, pos)
+
+    if pos >= len(expr) or expr[pos] != "[":
+        raise ValueError(f"Expected '[' at position {pos}")
+
+    end = expr.find("]", pos + 1)
+    if end == -1:
+        raise ValueError(f"Missing closing ']' starting at position {pos}")
+
+    raw = expr[pos + 1:end]
+    nodes = [n.strip() for n in raw.split(",") if n.strip()]
+
+    if len(nodes) != 2:
+        raise ValueError(
+            f"Exactly 2 nodes are required, got {len(nodes)} in [{raw}]"
+        )
+
+    for node in nodes:
+        if not NODE_RE.fullmatch(node):
+            raise ValueError(f"Invalid node name: {node!r}")
+
+    return nodes, end + 1
+
+
+def parse_component_core(expr: str, pos: int):
+    """
+    Parse the part before [nodes]:
+    10v
+    5ke
+    2.2Me
+    """
+    pos = skip_spaces(expr, pos)
+    m = COMPONENT_CORE_RE.match(expr, pos)
     if not m:
-        raise ValueError(f"Invalid component token: {token}")
+        raise ValueError(f"Invalid component at position {pos}: {expr[pos:pos+40]!r}")
 
     number = float(m.group(1))
     prefix = m.group(2)
-    suffix = m.group(3)
+    kind = m.group(3)
+
+    if prefix not in PREFIXES:
+        raise ValueError(f"Invalid prefix {prefix!r} at position {pos}")
+
+    if kind not in UNIT_MAP:
+        raise ValueError(f"Unsupported component kind {kind!r} at position {pos}")
 
     value = number * PREFIXES[prefix]
+    unit = UNIT_MAP[kind]
 
-    if suffix == "v":
-        return Source(value=value)
-    elif suffix == "e":
-        return Resistor(value=value)
-    else:
-        raise ValueError(f"Unknown component suffix in token: {token}")
+    comp = Component(kind=kind, value=value, unit=unit)
+    return comp, m.end()
 
 
-def tokenize(expr: str):
+def parse_single_component(expr: str, pos: int):
     """
-    Convert the input string into tokens.
+    Parse:
+      component[n0,n1]
     """
-    tokens = []
-    i = 0
+    comp, pos = parse_component_core(expr, pos)
+    nodes, pos = parse_nodes(expr, pos)
+    comp.nodes = nodes
+    return comp, pos
 
-    while i < len(expr):
-        ch = expr[i]
 
-        if ch.isspace():
-            i += 1
+def parse_group(expr: str, pos: int):
+    """
+    Parse:
+      (component, component, ...)[n0,n1]
+
+    The nodes apply to all components inside the group.
+    """
+    pos = skip_spaces(expr, pos)
+
+    if pos >= len(expr) or expr[pos] != "(":
+        raise ValueError(f"Expected '(' at position {pos}")
+
+    pos += 1
+    components = []
+
+    while True:
+        pos = skip_spaces(expr, pos)
+
+        if pos >= len(expr):
+            raise ValueError("Unclosed group: missing ')'")
+
+        if expr[pos] == ")":
+            pos += 1
+            break
+
+        comp, pos = parse_component_core(expr, pos)
+        components.append(comp)
+
+        pos = skip_spaces(expr, pos)
+
+        if pos >= len(expr):
+            raise ValueError("Unclosed group: missing ')'")
+
+        if expr[pos] == ",":
+            pos += 1
             continue
 
-        if expr[i:i+2] == "//":
-            tokens.append(("PARALLEL", "//"))
-            i += 2
-            continue
+        if expr[pos] == ")":
+            pos += 1
+            break
 
-        if ch == '-':
-            tokens.append(("SERIES", "-"))
-            i += 1
-            continue
+        raise ValueError(
+            f"Expected ',' or ')' at position {pos}, got {expr[pos]!r}"
+        )
 
-        if ch == '(':
-            tokens.append(("LPAREN", "("))
-            i += 1
-            continue
+    nodes, pos = parse_nodes(expr, pos)
 
-        if ch == ')':
-            tokens.append(("RPAREN", ")"))
-            i += 1
-            continue
+    for comp in components:
+        comp.nodes = nodes[:]
 
-        m = COMPONENT_RE.match(expr, i)
-        if m:
-            token = m.group(0)
-            tokens.append(("COMPONENT", parse_component(token)))
-            i += len(token)
-            continue
-
-        raise ValueError(f"Unexpected character at position {i}: {expr[i]!r}")
-
-    return tokens
+    return ParallelGroup(components=components, nodes=nodes), pos
 
 
-# ----------------------------
-# Parser
-# ----------------------------
+def parse_item(expr: str, pos: int):
+    """
+    Parse either:
+      component[n0,n1]
+    or
+      (component, component, ...)[n0,n1]
+    """
+    pos = skip_spaces(expr, pos)
 
-class Parser:
-    def __init__(self, tokens):
-        self.tokens = tokens
-        self.pos = 0
+    if pos >= len(expr):
+        return None, pos
 
-    def current(self):
-        if self.pos >= len(self.tokens):
-            return None
-        return self.tokens[self.pos]
+    if expr[pos] == "(":
+        return parse_group(expr, pos)
 
-    def match(self, kind):
-        tok = self.current()
-        if tok is not None and tok[0] == kind:
-            self.pos += 1
-            return tok[1]
-        return None
-
-    def expect(self, kind):
-        tok = self.current()
-        if tok is None:
-            raise ValueError(f"Expected {kind}, but reached end of input")
-        if tok[0] != kind:
-            raise ValueError(f"Expected {kind}, got {tok[0]} ({tok[1]!r})")
-        self.pos += 1
-        return tok[1]
-
-    def parse(self) -> Node:
-        node = self.parse_series()
-        if self.current() is not None:
-            tok = self.current()
-            raise ValueError(f"Unexpected token at end: {tok[0]} ({tok[1]!r})")
-        return node
-
-    def parse_series(self) -> Node:
-        # series := parallel ('-' parallel)*
-        items = [self.parse_parallel()]
-
-        while self.match("SERIES") is not None:
-            items.append(self.parse_parallel())
-
-        if len(items) == 1:
-            return items[0]
-        return Series(items)
-
-    def parse_parallel(self) -> Node:
-        # parallel := factor ('//' factor)*
-        items = [self.parse_factor()]
-
-        while self.match("PARALLEL") is not None:
-            items.append(self.parse_factor())
-
-        if len(items) == 1:
-            return items[0]
-        return Parallel(items)
-
-    def parse_factor(self) -> Node:
-        # factor := COMPONENT | '(' expr ')'
-        tok = self.current()
-        if tok is None:
-            raise ValueError("Unexpected end of input while parsing factor")
-
-        kind, value = tok
-
-        if kind == "COMPONENT":
-            self.pos += 1
-            return value
-
-        if kind == "LPAREN":
-            self.pos += 1
-            node = self.parse_series()
-            self.expect("RPAREN")
-            return node
-
-        raise ValueError(f"Expected component or '(', got {kind} ({value!r})")
+    return parse_single_component(expr, pos)
 
 
-def parse_circuit(expr: str) -> Node:
+def parse_circuit(expr: str) -> Circuit:
     expr = normalize_expr(expr)
-    tokens = tokenize(expr)
-    parser = Parser(tokens)
-    return parser.parse()
+    pos = 0
+    elements = []
+
+    while True:
+        pos = skip_spaces(expr, pos)
+
+        if pos >= len(expr):
+            break
+
+        item, pos = parse_item(expr, pos)
+        elements.append(item)
+
+    return Circuit(elements)
 
 
 # ----------------------------
 # Pretty print
 # ----------------------------
 
-def print_tree(node: Node, indent: int = 0):
+def print_tree(node, indent: int = 0):
     pad = "  " * indent
 
-    if isinstance(node, Source):
-        print(f"{pad}Source({node.value} V)")
-    elif isinstance(node, Resistor):
-        print(f"{pad}Resistor({node.value} ohm)")
-    elif isinstance(node, Series):
-        print(f"{pad}Series")
-        for child in node.children:
-            print_tree(child, indent + 1)
-    elif isinstance(node, Parallel):
-        print(f"{pad}Parallel")
-        for child in node.children:
-            print_tree(child, indent + 1)
+    if isinstance(node, Circuit):
+        print(f"{pad}Circuit")
+        for elem in node.elements:
+            print_tree(elem, indent + 1)
+
+    elif isinstance(node, ParallelGroup):
+        print(f"{pad}ParallelGroup nodes={node.nodes}")
+        for comp in node.components:
+            print_tree(comp, indent + 1)
+
+    elif isinstance(node, Component):
+        print(
+            f"{pad}Component(kind={node.kind!r}, value={node.value}, "
+            f"unit={node.unit!r}, nodes={node.nodes})"
+        )
+
     else:
         raise TypeError(f"Unknown node type: {type(node)}")
 
@@ -228,8 +268,7 @@ def print_tree(node: Node, indent: int = 0):
 # ----------------------------
 
 if __name__ == "__main__":
-	expr = "10V-(50ke//10Me)-2Me"
-	print(f'Example: {expr}\n')
-	#expr = input(f'Ingrese la expresión: ')
-	tree = parse_circuit(expr)
-	print_tree(tree)
+    expr = "10uh[n0,n1]  (10e,5e)[n1,n2]"
+    #expr = input("Enter the expression: ")
+    tree = parse_circuit(expr)
+    print_tree(tree)
