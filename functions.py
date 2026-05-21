@@ -250,7 +250,7 @@ def print_tree(node, indent: int = 0):
 
     elif isinstance(node, ParallelGroup):
         print(f"{pad}ParallelGroup nodes={node.nodes}")
-        for comp in node.components:
+        for comp in node.components:	
             print_tree(comp, indent + 1)
 
     elif isinstance(node, Component):
@@ -269,6 +269,8 @@ def print_tree(node, indent: int = 0):
 
 if __name__ == "__main__":
     expr = "10uh[n0,n1]  (10e,5e)[n1,n2]"
+    print(f'{expr}\n')
     #expr = input("Enter the expression: ")
     tree = parse_circuit(expr)
-    print_tree(tree)
+    print(tree.elements)
+    #print_tree(tree)
