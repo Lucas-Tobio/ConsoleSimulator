@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 import re
 
-
 # ----------------------------
 # Normalization
 # ----------------------------
@@ -262,15 +261,3 @@ def print_tree(node, indent: int = 0):
     else:
         raise TypeError(f"Unknown node type: {type(node)}")
 
-
-# ----------------------------
-# Example
-# ----------------------------
-
-if __name__ == "__main__":
-    expr = "10uh[n0,n1]  (10e,5e)[n1,n2]"
-    print(f'{expr}\n')
-    #expr = input("Enter the expression: ")
-    tree = parse_circuit(expr)
-    print(tree.elements)
-    #print_tree(tree)
