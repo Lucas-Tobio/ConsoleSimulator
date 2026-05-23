@@ -5,9 +5,9 @@ import components as cps
 # ----------------------------
 
 if __name__ == "__main__":
-    expr = "10V[n0,n1] 50e[n1,n2] 50e[n2,n0]"
-    print(f'Entrada: {expr}\n')
-    #expr = input("Enter the expression: ")
+    #expr = "10V[n0,n1] 50e[n1,n2] 50e[n2,n0]"
+    expr = input("Enter the expression: ")
+    #print(f'Entrada: {expr}\n')
     tree = cps.parse_circuit(expr)
     print(f'{tree.elements}\n')
     #print_tree(tree)
