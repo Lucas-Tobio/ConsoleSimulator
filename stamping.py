@@ -3,8 +3,10 @@ from components import Component, ParallelGroup
 
 def iter_components(circuit):
     """
-    Devuelve una lista plana de Component.
-    Si encuentra ParallelGroup, saca sus componentes internos.
+    Aplana el circuito y devuelve una lista lineal de componentes.
+
+    Si encuentra un ParallelGroup, extrae sus componentes internos para
+    que luego puedan ser estampados uno por uno en la matriz.
     """
     flat = []
 
@@ -21,7 +23,9 @@ def iter_components(circuit):
 
 def collect_nodes(components):
     """
-    Junta todos los nodos usados por los componentes.
+    Recolecta todos los nodos usados por los componentes del circuito.
+
+    Devuelve una lista ordenada de nodos únicos.
     """
     nodes = set()
     for c in components:
@@ -32,16 +36,14 @@ def collect_nodes(components):
 
 def build_mna_matrix(circuit, ground="n0"):
     """
-    Construye la matriz MNA para resistencias y fuentes de tensión DC.
+    Construye la matriz MNA del circuito para resistencias y fuentes DC.
 
-    Retorna:
-        A, z, node_index, voltage_sources
-
-    Donde:
-        A = matriz MNA
-        z = vector del lado derecho
-        node_index = mapa nodo -> índice de incógnita
-        voltage_sources = lista de fuentes de tensión en el orden usado por la matriz
+    El procedimiento consiste en:
+    - identificar los nodos desconocidos,
+    - asignar índices a cada nodo,
+    - agregar una incógnita extra por cada fuente de tensión,
+    - estampar resistencias y fuentes en la matriz,
+    - devolver la matriz A y el vector z listos para resolver.
     """
     components = iter_components(circuit)
     nodes = collect_nodes(components)
@@ -126,7 +128,10 @@ def build_mna_matrix(circuit, ground="n0"):
 
 def solve_mna(circuit, ground="n0"):
     """
-    Construye y resuelve el sistema MNA.
+    Construye y resuelve el sistema MNA del circuito.
+
+    Devuelve el vector de solución junto con la matriz y los datos
+    auxiliares necesarios para interpretar el resultado.
     """
     A, z, node_index, voltage_sources = build_mna_matrix(circuit, ground=ground)
 
@@ -140,7 +145,10 @@ def solve_mna(circuit, ground="n0"):
 
 def print_solution(x, node_index, voltage_sources, ground="n0"):
     """
-    Muestra tensiones nodales y corrientes de fuentes.
+    Muestra las tensiones nodales y las corrientes asociadas a las
+    fuentes de tensión.
+
+    Se usa después de resolver el sistema para interpretar los resultados.
     """
     inv_node_index = {idx: node for node, idx in node_index.items()}
     n = len(node_index)
