@@ -30,3 +30,6 @@ Simulador de circuitos en consola basado en nodos y análisis nodal modificado (
 ## Requisitos
 - Python 3.x
 - NumPy
+
+Este proyecto implementa un simulador de circuitos en consola basado en nodos y análisis nodal modificado (MNA).  
+Por el momento soporta resistencias y fuentes ideales de tensión DC.
