@@ -75,7 +75,7 @@ COMPONENT_CORE_RE = re.compile(r"\s*(\d+(?:\.\d+)?)([kMmunp]?)([a-z])")
 
 
 def skip_spaces(expr: str, pos: int) -> int:
-	"""
+    """
     Avanza la posición mientras haya espacios en blanco.
     Se usa para que el parser pueda ignorar separaciones opcionales.
     """
@@ -240,7 +240,7 @@ def parse_item(expr: str, pos: int):
 
 
 def parse_circuit(expr: str) -> Circuit:
-	"""
+    """
     Normaliza la expresión y construye el circuito completo.
 
     Recorre toda la entrada, reconoce cada elemento y lo guarda en
@@ -267,7 +267,7 @@ def parse_circuit(expr: str) -> Circuit:
 # ----------------------------
 
 def print_tree(node, indent: int = 0):
-	"""
+    """
     Imprime en pantalla el árbol interno del circuito con formato jerárquico.
 
     Sirve para depurar y visualizar cómo quedó parseada la entrada.
@@ -281,7 +281,7 @@ def print_tree(node, indent: int = 0):
 
     elif isinstance(node, ParallelGroup):
         print(f"{pad}ParallelGroup nodes={node.nodes}")
-        for comp in node.components:	
+        for comp in node.components:
             print_tree(comp, indent + 1)
 
     elif isinstance(node, Component):
@@ -292,4 +292,3 @@ def print_tree(node, indent: int = 0):
 
     else:
         raise TypeError(f"Unknown node type: {type(node)}")
-
