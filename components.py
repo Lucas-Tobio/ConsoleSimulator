@@ -1,15 +1,16 @@
 from dataclasses import dataclass, field
 import re
 
-
 # ----------------------------
 # Normalization
 # ----------------------------
 
 def normalize_expr(expr: str) -> str:
     """
-    Convert everything to lowercase except 'M',
-    so Mega prefix is preserved.
+    Normaliza la expresión de entrada para facilitar el parseo.
+
+    Convierte todos los caracteres a minúsculas excepto la 'M',
+    para conservar el prefijo de mega.
     """
     return "".join(ch if ch == "M" else ch.lower() for ch in expr)
 
@@ -74,6 +75,10 @@ COMPONENT_CORE_RE = re.compile(r"\s*(\d+(?:\.\d+)?)([kMmunp]?)([a-z])")
 
 
 def skip_spaces(expr: str, pos: int) -> int:
+    """
+    Avanza la posición mientras haya espacios en blanco.
+    Se usa para que el parser pueda ignorar separaciones opcionales.
+    """
     while pos < len(expr) and expr[pos].isspace():
         pos += 1
     return pos
@@ -81,8 +86,12 @@ def skip_spaces(expr: str, pos: int) -> int:
 
 def parse_nodes(expr: str, pos: int):
     """
-    Parse a node list like: [n0,n1]
-    Returns (nodes_list, new_pos)
+    Lee la lista de nodos entre corchetes.
+
+    Ejemplo:
+        [n0,n1]
+
+    Devuelve la lista de nodos y la nueva posición de lectura.
     """
     pos = skip_spaces(expr, pos)
 
@@ -110,10 +119,15 @@ def parse_nodes(expr: str, pos: int):
 
 def parse_component_core(expr: str, pos: int):
     """
-    Parse the part before [nodes]:
-    10v
-    5ke
-    2.2Me
+    Lee la parte básica de un componente antes de los nodos.
+
+    Ejemplos válidos:
+        10v
+        5ke
+        2.2Me
+
+    Convierte el valor numérico aplicando el prefijo correspondiente
+    y devuelve un objeto Component parcialmente cargado.
     """
     pos = skip_spaces(expr, pos)
     m = COMPONENT_CORE_RE.match(expr, pos)
@@ -139,8 +153,12 @@ def parse_component_core(expr: str, pos: int):
 
 def parse_single_component(expr: str, pos: int):
     """
-    Parse:
-      component[n0,n1]
+    Parsea un componente individual con sus dos nodos.
+
+    Ejemplo:
+        10v[n0,n1]
+
+    Devuelve el componente completo y la posición final de lectura.
     """
     comp, pos = parse_component_core(expr, pos)
     nodes, pos = parse_nodes(expr, pos)
@@ -150,10 +168,12 @@ def parse_single_component(expr: str, pos: int):
 
 def parse_group(expr: str, pos: int):
     """
-    Parse:
-      (component, component, ...)[n0,n1]
+    Parsea un grupo compacto de componentes en paralelo.
 
-    The nodes apply to all components inside the group.
+    Ejemplo:
+        (5ke,10ke)[n0,n1]
+
+    Todos los componentes dentro del grupo comparten los mismos nodos.
     """
     pos = skip_spaces(expr, pos)
 
@@ -203,10 +223,10 @@ def parse_group(expr: str, pos: int):
 
 def parse_item(expr: str, pos: int):
     """
-    Parse either:
-      component[n0,n1]
-    or
-      (component, component, ...)[n0,n1]
+    Determina si el próximo elemento de la entrada es:
+
+    - un componente individual: componente[n0,n1]
+    - un grupo de componentes: (componente, componente, ...)[n0,n1]
     """
     pos = skip_spaces(expr, pos)
 
@@ -220,6 +240,12 @@ def parse_item(expr: str, pos: int):
 
 
 def parse_circuit(expr: str) -> Circuit:
+    """
+    Normaliza la expresión y construye el circuito completo.
+
+    Recorre toda la entrada, reconoce cada elemento y lo guarda en
+    un objeto Circuit.
+    """
     expr = normalize_expr(expr)
     pos = 0
     elements = []
@@ -241,6 +267,11 @@ def parse_circuit(expr: str) -> Circuit:
 # ----------------------------
 
 def print_tree(node, indent: int = 0):
+    """
+    Imprime en pantalla el árbol interno del circuito con formato jerárquico.
+
+    Sirve para depurar y visualizar cómo quedó parseada la entrada.
+    """
     pad = "  " * indent
 
     if isinstance(node, Circuit):
@@ -261,14 +292,3 @@ def print_tree(node, indent: int = 0):
 
     else:
         raise TypeError(f"Unknown node type: {type(node)}")
-
-
-# ----------------------------
-# Example
-# ----------------------------
-
-if __name__ == "__main__":
-    expr = "10uh[n0,n1]  (10e,5e)[n1,n2]"
-    #expr = input("Enter the expression: ")
-    tree = parse_circuit(expr)
-    print_tree(tree)
