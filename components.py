@@ -62,8 +62,6 @@ NODE_RE = re.compile(r"n[a-z0-9_]*$")
 UNIT_MAP = {
     "v": "V",
     "e": "ohm",
-    "f": "F",
-    "h": "H",
 }
 
 
@@ -71,7 +69,7 @@ UNIT_MAP = {
 # 10v[n0,n1]
 # 5ke[n1,n2]
 # 2.2Me[n2,n3]
-COMPONENT_CORE_RE = re.compile(r"\s*(\d+(?:\.\d+)?)([kMmunp]?)([a-z])")
+COMPONENT_CORE_RE = re.compile(r"\s*([+-]?\d+(?:\.\d+)?)([kMmunp]?)([a-z])")
 
 
 def skip_spaces(expr: str, pos: int) -> int:
@@ -145,6 +143,12 @@ def parse_component_core(expr: str, pos: int):
         raise ValueError(f"Unsupported component kind {kind!r} at position {pos}")
 
     value = number * PREFIXES[prefix]
+
+    # Una resistencia ideal de cero ohmios no puede estampase como
+    # conductancia: requeriría dividir por cero. Una fuente de 0 V sí es
+    # válida, por eso la restricción solo se aplica a las resistencias.
+    if kind == "e" and value <= 0:
+        raise ValueError("Resistance value must be greater than zero")
     unit = UNIT_MAP[kind]
 
     comp = Component(kind=kind, value=value, unit=unit)
@@ -214,6 +218,9 @@ def parse_group(expr: str, pos: int):
         )
 
     nodes, pos = parse_nodes(expr, pos)
+
+    if not components:
+        raise ValueError("A parallel group must contain at least one component")
 
     for comp in components:
         comp.nodes = nodes[:]

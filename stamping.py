@@ -110,17 +110,17 @@ def build_mna_matrix(circuit, ground="n0"):
         i = idx(n1)
         j = idx(n2)
 
-        # Conexión entre nodos y corriente de la fuente
-        # Columna de la fuente en las ecuaciones nodales
+        # La sintaxis de la fuente es valorv[n+, n-]:
+        # V(n1) - V(n2) = valor. La corriente adicional se define también
+        # de n1 hacia n2. Este es el sello MNA convencional B / B^T.
         if i is not None:
-            A[i, vs_idx] -= 1.0
-            A[vs_idx, i] -= 1.0
+            A[i, vs_idx] += 1.0
+            A[vs_idx, i] += 1.0
         if j is not None:
-            A[j, vs_idx] += 1.0
-            A[vs_idx, j] += 1.0
+            A[j, vs_idx] -= 1.0
+            A[vs_idx, j] -= 1.0
 
-        # Ecuación de la fuente:
-        # V(n1) - V(n2) = value
+        # Ecuación de la fuente: V(n1) - V(n2) = value
         z[vs_idx] = c.value
 
     return A, z, node_index, voltage_sources
@@ -138,7 +138,11 @@ def solve_mna(circuit, ground="n0"):
     try:
         x = np.linalg.solve(A, z)
     except np.linalg.LinAlgError as e:
-        raise ValueError(f"El sistema no se pudo resolver: {e}")
+        raise ValueError(
+            "El sistema no se pudo resolver (matriz MNA singular). "
+            "Comprueba que cada subred tenga un camino al nodo de referencia "
+            f"y que no haya fuentes ideales redundantes o incompatibles: {e}"
+        ) from e
 
     return x, A, z, node_index, voltage_sources
 

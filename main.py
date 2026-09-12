@@ -1,18 +1,16 @@
-import stamping as st
 import components as cps
-# ----------------------------
-# Example
-# ----------------------------
+import stamping as st
 
-if __name__ == "__main__":
-    #expr = "10V[n0,n1] 50e[n1,n2] 50e[n2,n0]"
+
+def main() -> int:
     expr = input("Enter the expression: ")
-    #print(f'Entrada: {expr}\n')
-    tree = cps.parse_circuit(expr)
-    print(f'{tree.elements}\n')
-    #print_tree(tree)
-    
-    x, A, z, node_index, voltage_sources = st.solve_mna(tree, ground="n0")
+
+    try:
+        tree = cps.parse_circuit(expr)
+        x, A, z, node_index, voltage_sources = st.solve_mna(tree, ground="n0")
+    except ValueError as exc:
+        print(f"Error: {exc}")
+        return 1
 
     print("\nMatriz MNA A:")
     print(A)
@@ -22,3 +20,8 @@ if __name__ == "__main__":
 
     print()
     st.print_solution(x, node_index, voltage_sources, ground="n0")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
